@@ -1,5 +1,7 @@
 # mud
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/nvlled/mud.svg)](https://pkg.go.dev/github.com/nvlled/mud)
+
 A go library for generic objects pools. Basically a thin wrapper
 over `sync.Map` that allows using a single pool for different
 type parameters, or even different types.
