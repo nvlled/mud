@@ -1,9 +1,13 @@
 package mud_test
 
 import (
+	"fmt"
+	"math/rand"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/nvlled/mud"
 	"github.com/stretchr/testify/assert"
@@ -120,6 +124,74 @@ func TestMap(t *testing.T) {
 	assert.Equal(t, 2, get(m, 456))
 	assert.Equal(t, 1, get(m, "foo"))
 	assert.Equal(t, 0, get(m, 1.2))
+}
+
+func TestFreeUnknown(t *testing.T) {
+	allocatedObjects := []any{}
+	genPool := mud.NewPool()
+
+	add := func(x any) {
+		allocatedObjects = append(allocatedObjects, x)
+	}
+
+	obj1 := mud.Alloc(genPool, MaybeIntCtor)
+	obj1.value = 100
+	add(obj1)
+	obj2 := mud.Alloc(genPool, MaybeIntCtor)
+	obj2.value = 200
+	add(obj2)
+	obj3 := mud.Alloc(genPool, MaybeStrCtor)
+	obj3.value = "test"
+	add(obj3)
+	obj4 := mud.Alloc[int](genPool, nil)
+	*obj4 = 300
+	add(obj4)
+
+	for _, obj := range allocatedObjects {
+		mud.FreeUnknown(genPool, obj)
+	}
+
+	obj1 = mud.Alloc(genPool, MaybeIntCtor)
+	assert.Equal(t, 100, obj1.value)
+	obj2 = mud.Alloc(genPool, MaybeIntCtor)
+	assert.Equal(t, 200, obj2.value)
+	obj3 = mud.Alloc(genPool, MaybeStrCtor)
+	assert.Equal(t, "test", obj3.value)
+	obj4 = mud.Alloc[int](genPool, nil)
+	assert.Equal(t, 300, *obj4)
+}
+
+func TestConcurrency(t *testing.T) {
+	wg := sync.WaitGroup{}
+	genPool := mud.NewPool()
+	var numInts atomic.Int32
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func(i int) {
+			ms := rand.Int31n(100)
+			var item any
+			if i%2 == 0 {
+				numInts.Add(1)
+				maybeInt := mud.Alloc(genPool, MaybeIntCtor)
+				maybeInt.value = i + 3000
+				item = maybeInt
+			} else {
+				maybeStr := mud.Alloc(genPool, MaybeStrCtor)
+				maybeStr.value = fmt.Sprintf("%v", i+1)
+			}
+			time.Sleep(time.Duration(ms) * time.Millisecond)
+			mud.FreeUnknown(genPool, item)
+			wg.Done()
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < int(numInts.Load()); i++ {
+		x := mud.Alloc(genPool, MaybeIntCtor)
+		if x.value < 3000 && x.value != 0 {
+			t.Errorf("previously allocated value must be greater 3000: value=%v", x.value)
+		}
+	}
 }
 
 func BenchmarkGenPool(b *testing.B) {
