@@ -106,3 +106,15 @@ func Free[T any](mudPool *Pool, object *T) {
 		pool.Put(object)
 	}
 }
+
+// Frees the object with an unkown type. It
+// will automatically determine the actual type
+// and store in the correct pool. Useful for
+// allocating different types in a single slice.
+func FreeUnknown(mudPool *Pool, object any) {
+	typeOf := reflect.TypeOf(object)
+	pool, ok := getPool(mudPool, typeOf)
+	if ok {
+		pool.Put(object)
+	}
+}
